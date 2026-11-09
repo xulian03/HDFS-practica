@@ -23,7 +23,12 @@ run() {
   local nombre=$1; shift
   hdfs dfs -rm -r -f -skipTrash "$OUT/$nombre" >/dev/null
   echo ">>> Job $nombre"
-  hadoop jar "$STREAMING" -D mapreduce.job.name="$nombre" "$@" -input "$IN" -output "$OUT/$nombre"
+  # -cmdenv PYTHONPATH=. : -files deja cada archivo en su propio directorio de caché y solo pone
+  # enlaces simbólicos en el directorio de la tarea. Python resuelve el enlace del script y busca
+  # módulos en la carpeta real, donde texto.py NO está → ModuleNotFoundError. Con PYTHONPATH=.
+  # también busca en el directorio de la tarea, donde sí está el enlace a texto.py.
+  hadoop jar "$STREAMING" -D mapreduce.job.name="$nombre" "$@" -cmdenv PYTHONPATH=. \
+    -input "$IN" -output "$OUT/$nombre"
   echo ">>> Salida en HDFS:"
   hdfs dfs -ls "$OUT/$nombre"
 }
