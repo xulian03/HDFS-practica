@@ -8,8 +8,8 @@ Guion completo para la demostración: qué mostrar, en qué orden, qué comandos
 
 ## Índice
 
-0. [Antes de la sustentación](#0-antes-de-la-sustentación)
-1. [Arquitectura](#1-arquitectura)
+0. [Antes de la sustentación](#0-antes-de-la-sustentación) · incluye *Cómo leer los comandos* y *Un job sin `run.sh`*
+1. [Arquitectura](#1-arquitectura) · diagramas del clúster, de los jobs y de la vida de un job
 2. [Punto 1 — Clúster HDFS + YARN](#2-punto-1--clúster-hdfs--yarn)
 3. [Punto 2 — Jobs MapReduce](#3-punto-2--jobs-mapreduce)
 4. [Punto 3 — Verificación de la ejecución](#4-punto-3--verificación-de-la-ejecución)
@@ -61,6 +61,67 @@ docker compose exec client bash /workspace/jobs/run.sh setup
 
 > Los enlaces internos de las UIs apuntan a nombres como `datanode2:8042` o `historyserver:19888`. El navegador no los conoce: basta con cambiar el nombre por `localhost` (cuando el puerto está publicado) o ignorarlos.
 
+### Cómo leer los comandos
+
+Casi todos los comandos tienen la misma forma:
+
+```
+docker compose exec  client   hdfs dfs -ls /reviews
+└──────┬──────────┘  └──┬──┘  └───────┬────────┘
+ "ejecuta dentro de"  contenedor   el comando de Hadoop
+```
+
+**Atajo para la demo:** abrir una terminal *dentro* del cliente una sola vez y escribir solo la parte de Hadoop:
+
+```bash
+docker compose exec client bash
+# ahora estamos dentro del contenedor:
+hdfs dfs -ls /reviews
+bash /workspace/jobs/run.sh promedio
+exit
+```
+
+| Comando | Qué hace, en una frase |
+|---|---|
+| `docker compose up -d` / `ps` / `logs <servicio>` | Levanta el clúster / muestra los contenedores / muestra el log de uno |
+| `docker compose stop` / `start` / `kill` / `restart <servicio>` | Apaga / enciende / mata de golpe / reinicia un contenedor (para los fallos) |
+| `hdfs dfs -put <local> <hdfs>` | Sube un archivo de tu disco a HDFS |
+| `hdfs dfs -ls <ruta>` / `-cat <archivo>` | Lista / muestra archivos de HDFS (igual que `ls` y `cat` en Linux) |
+| `hdfs dfs -rm -r <ruta>` | Borra en HDFS |
+| `hdfs dfs -setrep -w <n> <archivo>` | Cambia cuántas copias tiene el archivo y espera a que se apliquen |
+| `hdfs dfsadmin -report` | Estado de HDFS: DataNodes vivos y muertos, espacio |
+| `hdfs fsck <ruta> -files -blocks -locations` | Revisa la salud de los archivos: bloques, réplicas y en qué nodo está cada una |
+| `hdfs dfsadmin -safemode get` | ¿El NameNode está en modo solo lectura? |
+| `yarn node -list -all` | NodeManagers registrados y su estado (RUNNING, LOST…) |
+| `yarn application -list -appStates ALL` | Jobs y su estado (RUNNING, SUCCEEDED, FAILED…) |
+| `yarn logs -applicationId <id>` | Logs de todas las tareas de un job (incluye los errores de Python) |
+| `yarn --daemon stop` / `start nodemanager` | Apaga / enciende solo el NodeManager de una máquina |
+| `hadoop jar hadoop-streaming.jar …` | Lanza un job MapReduce con scripts (ver abajo) |
+
+### Un job sin `run.sh`
+
+`run.sh` solo evita escribir rutas largas. Lo que ejecuta por dentro, por ejemplo para el promedio, es **un único comando**:
+
+```bash
+hadoop jar /opt/hadoop/share/hadoop/tools/lib/hadoop-streaming-3.4.1.jar \
+  -files /workspace/jobs/texto.py,/workspace/jobs/prom_map.py,/workspace/jobs/prom_reduce.py \
+  -cmdenv PYTHONPATH=. \
+  -mapper  "python3 prom_map.py" \
+  -reducer "python3 prom_reduce.py" \
+  -input   /reviews/input \
+  -output  /reviews/output/02-promedio-genero
+```
+
+| Línea | Significado |
+|---|---|
+| `hadoop jar …streaming.jar` | “Quiero un job MapReduce cuyo map y reduce son programas cualquiera (aquí, Python)” |
+| `-files …` | Copia estos scripts a cada nodo donde corra una tarea |
+| `-cmdenv PYTHONPATH=.` | Para que `import texto` encuentre `texto.py` en el directorio de la tarea |
+| `-mapper` / `-reducer` | Qué programa ejecutar en cada fase |
+| `-input` / `-output` | Carpeta de HDFS que se lee / carpeta nueva donde se escribe el resultado (no debe existir) |
+
+Opcionales que usan otros jobs: `-combiner` (wordcount), `-numReduceTasks N` (cuántos reducers). Antes de lanzar, `run.sh` borra la salida anterior, porque Hadoop se niega a sobrescribirla.
+
 ---
 
 ## 1. Arquitectura
@@ -73,24 +134,120 @@ Hadoop no es un solo “manejador”: son **dos sistemas**, cada uno con su jefe
 | **YARN** (recursos) | ResourceManager | NodeManager | Cuánta CPU/RAM hay libre y quién la usa |
 | **MapReduce** (programa) | ApplicationMaster (uno por job) | Contenedores map / reduce | El cálculo |
 
+### 1.1 Los contenedores y cómo se hablan
+
 ```mermaid
 flowchart TB
-    C[client<br/>hdfs dfs · hadoop jar] -->|"¿dónde están los bloques?"| NN[NameNode :9870]
-    C -->|"ejecuta este job"| RM[ResourceManager :8088]
-    HS[HistoryServer :19888]
-
-    subgraph M1[datanode1]
-      DN1[DataNode] --- NM1[NodeManager :8042]
-    end
-    subgraph M2[datanode2]
-      DN2[DataNode] --- NM2[NodeManager]
-    end
-    subgraph M3[datanode3]
-      DN3[DataNode] --- NM3[NodeManager]
+    subgraph CLIENTE["client (desde aquí lanzamos todo)"]
+        RUN["jobs/run.sh<br/>hdfs dfs · hadoop jar"]
     end
 
-    NN -. heartbeats .- DN1 & DN2 & DN3
-    RM -. heartbeats .- NM1 & NM2 & NM3
+    subgraph JEFES["Jefes (uno de cada uno)"]
+        NN["namenode<br/>NameNode · :9870<br/>metadatos: qué bloques y dónde"]
+        RM["resourcemanager<br/>ResourceManager · :8088<br/>reparte CPU y RAM"]
+        HS["historyserver<br/>HistoryServer · :19888<br/>jobs terminados y logs"]
+    end
+
+    subgraph W1["datanode1 (máquina obrera)"]
+        DN1["DataNode<br/>bloques en disco"]
+        NM1["NodeManager · :8042<br/>corre map/reduce"]
+    end
+    subgraph W2["datanode2 (máquina obrera)"]
+        DN2["DataNode"]
+        NM2["NodeManager"]
+    end
+    subgraph W3["datanode3 (máquina obrera)"]
+        DN3["DataNode"]
+        NM3["NodeManager"]
+    end
+
+    RUN -->|"1 · ¿dónde están los bloques?"| NN
+    RUN -->|"2 · ejecuta este job"| RM
+    RM -->|"3 · lanza contenedores"| NM1 & NM2 & NM3
+    NM1 -->|"4 · lee su bloque local"| DN1
+    NM2 --> DN2
+    NM3 --> DN3
+
+    DN1 & DN2 & DN3 -. "heartbeat cada 3 s" .-> NN
+    NM1 & NM2 & NM3 -. "heartbeat" .-> RM
+    NM1 & NM2 & NM3 -. "logs al terminar" .-> HS
+```
+
+Cómo leerlo:
+
+- **HDFS:** NameNode + DataNodes guardan los datos.
+- **YARN:** ResourceManager + NodeManagers ejecutan el cómputo.
+- **Cada máquina obrera tiene las dos cosas**, por eso el mapper lee el bloque **de su propio disco** (paso 4).
+- Las líneas punteadas son los **heartbeats**: así los jefes saben quién sigue vivo. Cuando dejan de llegar, empieza la tolerancia a fallos (sección 5).
+
+### 1.2 Los jobs de este proyecto
+
+```mermaid
+flowchart LR
+    CSV["reviews_filmaffinity.csv<br/>(tu PC · 11 MB)"] -->|"run.sh setup<br/>hdfs dfs -put"| IN[("HDFS: /reviews/input<br/>11 bloques × 3 réplicas")]
+
+    IN --> J1["Job 1 · wordcount<br/>wc_map → combiner → 3 reducers"]
+    IN --> J2["Job 2 · promedio<br/>prom_map → prom_reduce"]
+    IN --> J3["Job 3 · entrenar<br/>nb_train_map → 1 reducer"]
+    IN --> J4["Job 4 · clasificar<br/>nb_classify_map → 1 reducer"]
+
+    J1 --> O1[("01-wordcount<br/>historia 5081 …")]
+    J2 --> O2[("02-promedio-genero<br/>Comedia 5.21 …")]
+    J3 --> O3[("03-modelo<br/>palabra · pos · neg")]
+    J4 --> O4[("04-clasificacion<br/>exactitud 85.7 %")]
+
+    O3 -. "distributed cache<br/>(se copia a cada nodo)" .-> J4
+```
+
+Los jobs 1, 2 y 3 leen el mismo input y son independientes. El job 4 necesita el modelo que produce el 3.
+
+### 1.3 Qué pasa dentro de un job (ejemplo: promedio por género)
+
+```mermaid
+flowchart LR
+    subgraph B1["Bloque 1 (datanode1)"]
+        L1["Celda 211‖Thriller‖…‖9<br/>Ágora‖Aventuras‖…‖1<br/>Es por tu bien‖Comedia‖…‖6"]
+    end
+    subgraph B2["Bloque 2 (datanode2)"]
+        L2["AirBag‖Comedia‖…‖8<br/>El orfanato‖Terror‖…‖3<br/>Ocho apellidos‖Comedia‖…‖8"]
+    end
+
+    L1 -->|"map"| M1["Thriller 9<br/>Aventuras 1<br/>Comedia 6"]
+    L2 -->|"map"| M2["Comedia 8<br/>Terror 3<br/>Comedia 8"]
+
+    M1 & M2 -->|"shuffle & sort<br/>(lo hace Hadoop)"| S["Aventuras [1]<br/>Comedia [6, 8, 8]<br/>Terror [3]<br/>Thriller [9]"]
+
+    S -->|"reduce"| R["Aventuras 1.00<br/>Comedia 7.33<br/>Terror 3.00<br/>Thriller 9.00"]
+```
+
+Las tres líneas de Comedia vienen de **dos mappers distintos** y Hadoop las junta en el **mismo** reducer. Eso es todo MapReduce: *map* transforma cada línea, Hadoop agrupa por clave, *reduce* combina cada grupo. (Con las 8.603 reseñas, Comedia da 5.21.)
+
+### 1.4 La vida de un job, paso a paso
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as client
+    participant NN as NameNode
+    participant RM as ResourceManager
+    participant AM as ApplicationMaster
+    participant NM as NodeManagers ×3
+    participant DN as DataNode local
+
+    C->>NN: ¿bloques de /reviews/input?
+    NN-->>C: 11 bloques y dónde está cada réplica
+    C->>RM: envía el job (scripts .py incluidos)
+    Note over RM: estado ACCEPTED
+    RM->>NM: arranca el ApplicationMaster del job
+    Note over RM: estado RUNNING
+    AM->>RM: pido 11 contenedores, cerca de cada bloque
+    RM-->>AM: contenedores en datanode1, 2 y 3
+    AM->>NM: lanza los map
+    NM->>DN: lee el bloque de su propio disco
+    Note over NM: python3 mapper.py → shuffle & sort → python3 reducer.py
+    NM->>DN: el reducer escribe part-0000N en HDFS
+    AM->>RM: terminé
+    Note over RM: estado FINISHED / SUCCEEDED
 ```
 
 **Decisión de diseño clave:** cada contenedor `datanodeN` corre **DataNode + NodeManager** juntos (como una máquina obrera real). Así YARN lanza cada mapper en la máquina que ya tiene su bloque (*data locality*: se mueve el código, no los datos). Además permite dos tipos de fallo:
@@ -410,6 +567,27 @@ docker compose exec client yarn node -list -all
 
 ### A. Apagar un DataNode → re-replicación
 
+```mermaid
+sequenceDiagram
+    participant NN as NameNode
+    participant DN1 as datanode1
+    participant DN2 as datanode2
+    participant DN3 as datanode3
+    participant C as client
+
+    Note over DN3: docker compose stop datanode3
+    DN3-xNN: ya no llegan heartbeats
+    Note over NN: 0-60 s · "Last contact" sube, aún lo cree vivo
+    Note over NN: ~60 s · datanode3 = DEAD
+    Note over NN: B2 tenía copias en DN1 y DN3 → queda con 1 de 2 (under-replicated)
+    NN->>DN1: copia B2 a datanode2
+    DN1->>DN2: B2 (re-replicación)
+    Note over NN: B2 vuelve a tener 2 copias → HEALTHY
+    C->>NN: quiero leer el archivo
+    NN-->>C: está en datanode1 y datanode2
+    C->>DN1: lee los bloques (sin enterarse del fallo)
+```
+
 Con replicación 3 y solo 3 nodos, al morir uno **no hay dónde** crear la tercera copia. Para que se vea la re-replicación, primero se baja la replicación del archivo a 2.
 
 ```bash
@@ -450,6 +628,26 @@ docker compose exec client hdfs dfs -setrep -w 3 /reviews/input/reviews_filmaffi
 
 ### B. Detener un NodeManager mientras corre un job
 
+```mermaid
+sequenceDiagram
+    participant RM as ResourceManager
+    participant AM as ApplicationMaster
+    participant NM2 as NodeManager datanode2
+    participant NMx as NodeManagers datanode1 y 3
+
+    Note over AM,NMx: job wordcount corriendo: maps repartidos en los 3 nodos
+    Note over NM2: yarn --daemon stop nodemanager
+    NM2-xAM: las tareas de datanode2 mueren
+    AM->>RM: necesito contenedores para reintentarlas
+    RM-->>AM: hay espacio en datanode1 y datanode3
+    AM->>NMx: relanza las tareas (attempt _1)
+    Note over RM: ~60 s sin heartbeat · datanode2 = LOST
+    Note over AM: si el AM estaba en datanode2, el RM lanza otro AM (appattempt 2)
+    AM->>RM: job SUCCEEDED · mismo resultado
+```
+
+El DataNode de datanode2 **sigue vivo**: solo cayó el cómputo, los datos nunca estuvieron en riesgo.
+
 ```bash
 # Terminal 1
 docker compose exec client bash /workspace/jobs/run.sh wordcount
@@ -476,6 +674,22 @@ docker compose exec datanode2 yarn --daemon start nodemanager
 
 ### C. Matar una máquina entera durante el Map
 
+```mermaid
+flowchart LR
+    subgraph X["datanode1 · docker compose kill"]
+        DN1["DataNode ✗"]
+        NM1["NodeManager ✗"]
+    end
+    subgraph OK["datanode2 y datanode3"]
+        DN23["DataNodes<br/>tienen copia de todos los bloques"]
+        NM23["NodeManagers<br/>reciben las tareas reintentadas"]
+    end
+
+    NM1 -. "tareas perdidas" .-> NM23
+    DN1 -. "lecturas → otra réplica" .-> DN23
+    NM23 --> R["Job SUCCEEDED<br/>exactitud 85.7 % (igual)"]
+```
+
 ```bash
 # Terminal 1
 docker compose exec client bash /workspace/jobs/run.sh clasificar
@@ -497,6 +711,16 @@ docker compose start datanode1
 ```
 
 ### D. Reiniciar el NameNode durante operaciones en HDFS
+
+```mermaid
+flowchart LR
+    C["client<br/>hdfs dfs -put"] -- "✗ Connection refused" --> NN["NameNode<br/>reiniciando"]
+    DN["DataNodes 1, 2 y 3<br/>bloques intactos en disco"] -. "nadie sabe qué bloque<br/>es de qué archivo" .- NN
+    NN -->|"al volver"| SM["SAFE MODE<br/>solo lectura hasta que los DataNodes<br/>reporten sus bloques"]
+    SM -->|"segundos después"| OKN["Normal<br/>acepta escrituras"]
+```
+
+Comparado con A: sin **un** DataNode todo sigue funcionando; sin **el** NameNode, HDFS completo se detiene.
 
 ```bash
 # Terminal 1: escrituras continuas
