@@ -48,7 +48,9 @@ case "${1:-}" in
       -numReduceTasks 3 \
       -mapper "python3 wc_map.py" -combiner "python3 wc_reduce.py" -reducer "python3 wc_reduce.py"
     echo ">>> Top 15:"
-    hdfs dfs -cat "$OUT/01-wordcount/part-*" | sort -t$'\t' -k2,2nr | head -15
+    # "|| true": head corta la tubería tras 15 líneas y sort muere con SIGPIPE; con pipefail
+    # eso abortaría el script (y "todos" se detendría aquí). Es solo para mostrar, se ignora.
+    hdfs dfs -cat "$OUT/01-wordcount/part-*" | sort -t$'\t' -k2,2nr | head -15 || true
     ;;
   promedio)
     run 02-promedio-genero \
@@ -62,8 +64,8 @@ case "${1:-}" in
       -files "$J/texto.py,$J/nb_train_map.py,$J/nb_train_reduce.py" \
       -numReduceTasks 1 \
       -mapper "python3 nb_train_map.py" -reducer "python3 nb_train_reduce.py"
-    # 2>/dev/null: head cierra la tubería tras 5 líneas y cat se queja; es inofensivo.
-    hdfs dfs -cat "$OUT/03-modelo/part-00000" 2>/dev/null | head -5
+    # Mismo caso: head corta la tubería; se ignora el error de cat.
+    hdfs dfs -cat "$OUT/03-modelo/part-00000" 2>/dev/null | head -5 || true
     ;;
   clasificar)
     # "hdfs://...#modelo.tsv": Hadoop descarga el modelo desde HDFS a cada nodo (distributed cache)
