@@ -11,6 +11,18 @@
     <value>resourcemanager</value>
   </property>
 
+  <!-- Con solo el hostname, el RM escucha únicamente en la IP de "resourcemanager" y NO en
+       localhost (el healthcheck de Docker hace curl a localhost y fallaba para siempre).
+       bind-host = 0.0.0.0 → escucha en todas las interfaces; los clientes siguen usando el hostname. -->
+  <property>
+    <name>yarn.resourcemanager.bind-host</name>
+    <value>0.0.0.0</value>
+  </property>
+  <property>
+    <name>yarn.nodemanager.bind-host</name>
+    <value>0.0.0.0</value>
+  </property>
+
   <!-- El shuffle (mover la salida de los mappers hacia los reducers) lo sirve cada NodeManager.
        Sin este servicio auxiliar los reducers no pueden descargar los datos de los mappers. -->
   <property>

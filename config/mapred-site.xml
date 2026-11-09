@@ -50,5 +50,10 @@
     <name>mapreduce.jobhistory.webapp.address</name>
     <value>historyserver:19888</value>
   </property>
+  <!-- Mismo problema que el ResourceManager: sin esto solo escucha en la IP de "historyserver". -->
+  <property>
+    <name>mapreduce.jobhistory.bind-host</name>
+    <value>0.0.0.0</value>
+  </property>
 
 </configuration>
