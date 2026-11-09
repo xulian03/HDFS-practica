@@ -62,7 +62,8 @@ case "${1:-}" in
       -files "$J/texto.py,$J/nb_train_map.py,$J/nb_train_reduce.py" \
       -numReduceTasks 1 \
       -mapper "python3 nb_train_map.py" -reducer "python3 nb_train_reduce.py"
-    hdfs dfs -cat "$OUT/03-modelo/part-00000" | head -5
+    # 2>/dev/null: head cierra la tubería tras 5 líneas y cat se queja; es inofensivo.
+    hdfs dfs -cat "$OUT/03-modelo/part-00000" 2>/dev/null | head -5
     ;;
   clasificar)
     # "hdfs://...#modelo.tsv": Hadoop descarga el modelo desde HDFS a cada nodo (distributed cache)
