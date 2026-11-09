@@ -1,0 +1,54 @@
+<?xml version="1.0"?>
+<!--
+  MapReduce = el programa que corre encima de HDFS (datos) y YARN (recursos).
+-->
+<configuration>
+
+  <!-- Quién ejecuta los jobs. Sin esto el default es "local": todo corre en un solo proceso
+       dentro del cliente, sin YARN, sin UI y sin reintentos en otros nodos. -->
+  <property>
+    <name>mapreduce.framework.name</name>
+    <value>yarn</value>
+  </property>
+
+  <!-- Los contenedores que lanza YARN (ApplicationMaster, mappers, reducers) arrancan con un entorno
+       vacío; hay que decirles dónde están las librerías de MapReduce. -->
+  <property>
+    <name>yarn.app.mapreduce.am.env</name>
+    <value>HADOOP_MAPRED_HOME=/opt/hadoop</value>
+  </property>
+  <property>
+    <name>mapreduce.map.env</name>
+    <value>HADOOP_MAPRED_HOME=/opt/hadoop</value>
+  </property>
+  <property>
+    <name>mapreduce.reduce.env</name>
+    <value>HADOOP_MAPRED_HOME=/opt/hadoop</value>
+  </property>
+
+  <!-- Cuánta RAM pide cada contenedor del job. El AM pide 1536 MB por defecto: en un portátil
+       eso deja poco espacio para las tareas. 512 MB alcanza para scripts de Python pequeños. -->
+  <property>
+    <name>yarn.app.mapreduce.am.resource.mb</name>
+    <value>512</value>
+  </property>
+  <property>
+    <name>mapreduce.map.memory.mb</name>
+    <value>512</value>
+  </property>
+  <property>
+    <name>mapreduce.reduce.memory.mb</name>
+    <value>512</value>
+  </property>
+
+  <!-- Dónde vive el HistoryServer: 10020 = RPC (lo usa el cliente), 19888 = interfaz web. -->
+  <property>
+    <name>mapreduce.jobhistory.address</name>
+    <value>historyserver:10020</value>
+  </property>
+  <property>
+    <name>mapreduce.jobhistory.webapp.address</name>
+    <value>historyserver:19888</value>
+  </property>
+
+</configuration>

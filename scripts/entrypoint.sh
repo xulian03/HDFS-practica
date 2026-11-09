@@ -15,7 +15,19 @@ case "$role" in
     exec hdfs namenode
     ;;
   datanode)
+    # Cada "máquina obrera" corre dos procesos: el NodeManager (YARN) en segundo plano
+    # y el DataNode (HDFS) como proceso principal. Así YARN puede lanzar los mappers en el
+    # mismo host que tiene los bloques (data locality).
+    # - docker stop datanodeN                                   -> se cae la máquina entera
+    # - docker compose exec datanodeN yarn --daemon stop nodemanager -> solo se cae YARN en ese nodo
+    yarn --daemon start nodemanager
     exec hdfs datanode
+    ;;
+  resourcemanager)
+    exec yarn resourcemanager
+    ;;
+  historyserver)
+    exec mapred historyserver
     ;;
   client)
     exec tail -f /dev/null

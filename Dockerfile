@@ -7,7 +7,7 @@ ENV HADOOP_HOME=/opt/hadoop \
     PATH=/opt/hadoop/bin:/opt/hadoop/sbin:$PATH
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl ca-certificates bash procps \
+    && apt-get install -y --no-install-recommends curl ca-certificates bash procps python3 \
     && rm -rf /var/lib/apt/lists/* \
     && curl -fSL --retry 3 "https://archive.apache.org/dist/hadoop/common/hadoop-${HADOOP_VERSION}/hadoop-${HADOOP_VERSION}.tar.gz" -o /tmp/hadoop.tar.gz \
     && mkdir -p /opt/hadoop \
@@ -15,7 +15,7 @@ RUN apt-get update \
     && rm /tmp/hadoop.tar.gz \
     && mkdir -p /data/name /data/data
 
-COPY config/core-site.xml config/hdfs-site.xml /opt/hadoop/etc/hadoop/
+COPY config/core-site.xml config/hdfs-site.xml config/yarn-site.xml config/mapred-site.xml /opt/hadoop/etc/hadoop/
 COPY scripts/entrypoint.sh /usr/local/bin/hdfs-lab-entrypoint
 RUN chmod +x /usr/local/bin/hdfs-lab-entrypoint
 

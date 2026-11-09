@@ -1,0 +1,69 @@
+<?xml version="1.0"?>
+<!--
+  YARN = la mitad del clúster que reparte CPU/RAM.
+  ResourceManager (jefe, contenedor "resourcemanager") + NodeManagers (uno dentro de cada datanodeN).
+-->
+<configuration>
+
+  <!-- Dónde vive el jefe de YARN. Los NodeManagers se registran aquí y el cliente envía los jobs aquí. -->
+  <property>
+    <name>yarn.resourcemanager.hostname</name>
+    <value>resourcemanager</value>
+  </property>
+
+  <!-- El shuffle (mover la salida de los mappers hacia los reducers) lo sirve cada NodeManager.
+       Sin este servicio auxiliar los reducers no pueden descargar los datos de los mappers. -->
+  <property>
+    <name>yarn.nodemanager.aux-services</name>
+    <value>mapreduce_shuffle</value>
+  </property>
+
+  <!-- Cuánta RAM y CPU "ofrece" cada NodeManager al clúster.
+       Con 2048 MB y contenedores de 512 MB caben 4 contenedores por nodo (12 en total). -->
+  <property>
+    <name>yarn.nodemanager.resource.memory-mb</name>
+    <value>2048</value>
+  </property>
+  <property>
+    <name>yarn.nodemanager.resource.cpu-vcores</name>
+    <value>2</value>
+  </property>
+
+  <!-- El contenedor más pequeño que el scheduler puede asignar. El default (1024) redondearía
+       nuestras peticiones de 512 MB a 1024 y cabría la mitad de tareas. -->
+  <property>
+    <name>yarn.scheduler.minimum-allocation-mb</name>
+    <value>256</value>
+  </property>
+  <property>
+    <name>yarn.scheduler.maximum-allocation-mb</name>
+    <value>2048</value>
+  </property>
+
+  <!-- La JVM reserva mucha memoria *virtual* que nunca usa; dentro de Docker eso hace que YARN
+       mate contenedores sanos ("running beyond virtual memory limits"). Lo desactivamos. -->
+  <property>
+    <name>yarn.nodemanager.vmem-check-enabled</name>
+    <value>false</value>
+  </property>
+
+  <!-- Al terminar un job, los logs de cada contenedor se copian a HDFS (/tmp/logs),
+       así se pueden leer aunque el NodeManager ya no exista. -->
+  <property>
+    <name>yarn.log-aggregation-enable</name>
+    <value>true</value>
+  </property>
+  <!-- A dónde apunta el enlace "logs" de la UI del ResourceManager para jobs terminados. -->
+  <property>
+    <name>yarn.log.server.url</name>
+    <value>http://historyserver:19888/jobhistory/logs</value>
+  </property>
+
+  <!-- Cada cuánto el RM considera muerto a un NodeManager sin heartbeat (default 10 min).
+       Lo bajamos a 60 s para que los experimentos de fallos no tarden tanto. -->
+  <property>
+    <name>yarn.nm.liveness-monitor.expiry-interval-ms</name>
+    <value>60000</value>
+  </property>
+
+</configuration>
