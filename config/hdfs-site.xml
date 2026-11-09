@@ -24,4 +24,11 @@
     <name>dfs.namenode.rpc-address</name>
     <value>namenode:9000</value>
   </property>
+  <!-- Un DataNode se declara muerto tras 2 × recheck-interval + 10 × heartbeat (3 s).
+       Default: 2 × 5 min + 30 s = 10,5 min. Con 15 s: 2 × 15 s + 30 s = 1 min,
+       suficiente para observar los experimentos de fallos sin esperar tanto. -->
+  <property>
+    <name>dfs.namenode.heartbeat.recheck-interval</name>
+    <value>15000</value>
+  </property>
 </configuration>
