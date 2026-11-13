@@ -13,6 +13,5 @@ docker compose exec client bash /workspace/jobs/run.sh todos      # wordcount, p
 |---|---|
 | [`docs/sustentacion.md`](docs/sustentacion.md) | Guion de la sustentación: arquitectura, jobs, verificación y tolerancia a fallos, con resultados esperados |
 | [`docs/guia-fallos.md`](docs/guia-fallos.md) | Guía rápida para ejecutar los 4 fallos y qué capturas tomar |
-| `taller HDFS.pdf` | Enunciado del taller |
 
 UIs: NameNode http://localhost:9870 · ResourceManager http://localhost:8088 · HistoryServer http://localhost:19888
