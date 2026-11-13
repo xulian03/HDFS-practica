@@ -101,15 +101,6 @@ services:
       - ./jobs:/workspace/jobs:ro
       - client-output:/workspace/output
 
-  dataset-generator:
-    image: python:3.12-alpine
-    profiles: ["tools"]
-    working_dir: /workspace
-    volumes:
-      - ./datasets:/workspace/datasets
-      - ./scripts/generate_dataset.py:/workspace/generate_dataset.py:ro
-    command: ["python", "generate_dataset.py", "--output", "datasets/transactions.csv", "--rows", "85000"]
-
 networks:
   hdfs-net:
 

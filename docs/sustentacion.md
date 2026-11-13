@@ -188,18 +188,14 @@ flowchart LR
 
     IN --> J1["Job 1 · wordcount<br/>wc_map → combiner → 3 reducers"]
     IN --> J2["Job 2 · promedio<br/>prom_map → prom_reduce"]
-    IN --> J3["Job 3 · entrenar<br/>nb_train_map → 1 reducer"]
-    IN --> J4["Job 4 · clasificar<br/>nb_classify_map → 1 reducer"]
+    IN --> J3["Job 3 · top<br/>top_map → combiner → 1 reducer"]
 
     J1 --> O1[("01-wordcount<br/>historia 5081 …")]
     J2 --> O2[("02-promedio-genero<br/>Comedia 5.21 …")]
-    J3 --> O3[("03-modelo<br/>palabra · pos · neg")]
-    J4 --> O4[("04-clasificacion<br/>exactitud 85.7 %")]
-
-    O3 -. "distributed cache<br/>(se copia a cada nodo)" .-> J4
+    J3 --> O3[("03-top-peliculas<br/>REC 495 …")]
 ```
 
-Los jobs 1, 2 y 3 leen el mismo input y son independientes. El job 4 necesita el modelo que produce el 3.
+Los tres jobs leen el mismo input y son independientes entre sí.
 
 ### 1.3 Qué pasa dentro de un job (ejemplo: promedio por género)
 
@@ -340,8 +336,7 @@ docker compose exec datanode1 python3 --version
 └── output/
     ├── 01-wordcount/          part-00000 · part-00001 · part-00002 · _SUCCESS
     ├── 02-promedio-genero/    part-00000 · _SUCCESS
-    ├── 03-modelo/             part-00000 · _SUCCESS      (el modelo entrenado)
-    ├── 04-clasificacion/      part-00000 · _SUCCESS
+    ├── 03-top-peliculas/      part-00000 · _SUCCESS
     └── 99-fallido/            (no se crea: el job falla)
 ```
 
@@ -359,11 +354,10 @@ Todos los jobs usan **Hadoop Streaming**: el mapper y el reducer son scripts de 
 
 | Archivo | Rol |
 |---|---|
-| `jobs/texto.py` | Compartido: parseo de la línea, tokenizador, stopwords, etiqueta pos/neg, división train/test |
+| `jobs/texto.py` | Compartido: parseo de la línea, tokenizador, stopwords |
 | `jobs/wc_map.py` · `wc_reduce.py` | Job 1 — WordCount |
 | `jobs/prom_map.py` · `prom_reduce.py` | Job 2 — Promedio por clave |
-| `jobs/nb_train_map.py` · `nb_train_reduce.py` | Job 3 — Entrenar clasificador |
-| `jobs/nb_classify_map.py` · `nb_classify_reduce.py` | Job 4 — Clasificar |
+| `jobs/top_map.py` · `top_reduce.py` | Job 3 — Top N (10 películas con más reseñas) |
 | `jobs/probar_local.py` | Simula `map → sort → reduce` sin Hadoop (validación) |
 | `jobs/run.sh` | Lanza cada job en el clúster |
 
@@ -373,14 +367,9 @@ Resumen de los jobs:
 |---|---|---|---|
 | **1 · wordcount** | `palabra\t1` | **Combiner** (suma parcial por mapper) · **3 reducers** | `palabra\ttotal` |
 | **2 · promedio** | `género\tnota` | Sin combiner (el promedio de promedios no es el promedio) | `género\tn\tpromedio` |
-| **3 · entrenar** | `palabra\tpos\tneg` (solo reseñas de train) | **1 reducer** → un solo archivo de modelo | `palabra\tveces_pos\tveces_neg` |
-| **4 · clasificar** | `real->predicha\t1` (solo reseñas de test) | El modelo llega a cada nodo por **distributed cache** | Matriz de confusión + exactitud |
+| **3 · top** | `película\t1` | **Combiner** (el reducer de wordcount) · **1 reducer**: necesita ver todas las películas para armar el ranking | Las 10 películas con más reseñas: `película\ttotal` |
 
-**Clasificador (jobs 3 y 4): Naive Bayes multinomial.**
-
-- Etiquetas a partir de la nota real: 7-10 → `pos`, 1-4 → `neg`, 5-6 → se descarta (neutra).
-- ~80 % de las reseñas entrenan, ~20 % se reservan para test. La división usa `crc32(reseña) % 10 < 2`: es **determinista**, así todos los mappers (procesos distintos en nodos distintos) coinciden. `hash()` de Python no sirve porque cambia en cada proceso.
-- Puntaje: `log P(clase) + Σ log P(palabra | clase)`, con suavizado de Laplace (+1).
+**Top N (job 3):** el reducer cuenta las reseñas de cada película y guarda solo las 10 mayores en un montículo (heap) de tamaño 10. Usa 1 solo reducer: con varios, cada uno vería solo parte de las películas y cada Top 10 sería parcial. El combiner suma parcialmente en cada mapper (sumar sumas parciales es correcto); el reducer de Top N **no** sirve como combiner porque descartaría películas que en otro mapper sí sumarían.
 
 ### 3.4 Validación local (sin clúster)
 
@@ -399,8 +388,7 @@ Uno por uno (mejor para la demo):
 ```bash
 docker compose exec client bash /workspace/jobs/run.sh wordcount
 docker compose exec client bash /workspace/jobs/run.sh promedio
-docker compose exec client bash /workspace/jobs/run.sh entrenar
-docker compose exec client bash /workspace/jobs/run.sh clasificar
+docker compose exec client bash /workspace/jobs/run.sh top
 ```
 
 O todo seguido: `docker compose exec client bash /workspace/jobs/run.sh todos`
@@ -456,35 +444,29 @@ Terror       941    6.21
 Thriller     762    6.37
 ```
 
-**Job 3 — Modelo**
+**Job 3 — Top 10 películas con más reseñas**
 
 ```
-__DOCS__     3134   1918      ← reseñas de entrenamiento: positivas, negativas
-abajo        33     33
-abandona     6      1
-...
+REC                      495
+El laberinto del fauno   495
+Ágora                    494
+Celda 211                487
+Lo imposible             470
+Ocho apellidos vascos    458
+El orfanato              446
+Alatriste                445
+La isla mínima           419
+Regresión                275
 ```
 
-Verificación: 3.920 positivas − 786 de test = **3.134** ✓ · 2.447 negativas − 529 de test = **1.918** ✓. El modelo tiene ~16.800 palabras.
-
-**Job 4 — Clasificación de las reseñas de test**
-
-```
-neg->neg     450
-neg->pos     79
-pos->neg     109
-pos->pos     677
-exactitud    1127/1315   85.7%
-```
-
-Para dar contexto: siempre decir “positivo” acertaría 786/1315 = **59,8 %**. Leer las palabras aporta ~26 puntos.
+Verificación: se contó aparte con un script independiente sobre el CSV (8.603 reseñas en total) y el ranking coincide. El empate de 495 se muestra en orden inverso por nombre.
 
 ### 3.7 Mostrar las salidas en HDFS
 
 ```bash
 docker compose exec client hdfs dfs -ls -R /reviews/output
 docker compose exec client hdfs dfs -cat /reviews/output/02-promedio-genero/part-00000
-docker compose exec client hdfs dfs -cat /reviews/output/04-clasificacion/part-00000
+docker compose exec client hdfs dfs -cat /reviews/output/03-top-peliculas/part-00000
 ```
 
 El `3` en `-rw-r--r--   3 root` es el factor de replicación de la salida.
@@ -549,6 +531,8 @@ docker compose exec datanode1 bash -c "tail -50 /opt/hadoop/logs/*nodemanager*.l
 ---
 
 ## 5. Punto 4 — Tolerancia a fallos
+
+> Para ejecutar los 4 experimentos de corrido y saber dónde tomar capturas, ver [`guia-fallos.md`](guia-fallos.md).
 
 **Antes de cada experimento**, confirmar que el clúster está sano:
 
@@ -687,12 +671,12 @@ flowchart LR
 
     NM1 -. "tareas perdidas" .-> NM23
     DN1 -. "lecturas → otra réplica" .-> DN23
-    NM23 --> R["Job SUCCEEDED<br/>exactitud 85.7 % (igual)"]
+    NM23 --> R["Job SUCCEEDED<br/>mismo top 15 (igual)"]
 ```
 
 ```bash
 # Terminal 1
-docker compose exec client bash /workspace/jobs/run.sh clasificar
+docker compose exec client bash /workspace/jobs/run.sh wordcount
 
 # Terminal 2: a mitad del map
 docker compose kill datanode1
@@ -702,7 +686,7 @@ Se caen a la vez el DataNode y el NodeManager.
 
 - Las tareas que corrían en datanode1 se reintentan en datanode2 y datanode3.
 - Los mappers leen sus bloques desde **otra réplica**: `Data-local map tasks` sigue alto porque, con replicación 3, los otros nodos también tienen todos los bloques.
-- La exactitud final sigue siendo **85.7 %**: un fallo no debe cambiar el resultado.
+- El top 15 final es idéntico: un fallo no debe cambiar el resultado.
 
 Restaurar:
 
@@ -770,16 +754,7 @@ Lanzar el mapper en la máquina que ya tiene el bloque: se mueve el código (KB)
 Sumar sumas parciales da el total correcto, así que el reducer de wordcount sirve como combiner (bajó el tráfico del shuffle ~80 %). El promedio de promedios parciales no es el promedio total: un mapper con 1 reseña pesaría igual que uno con 1.000.
 
 **¿Por qué 3 reducers en wordcount y 1 en los demás?**
-Para mostrar el particionado: cada palabra cae en un solo reducer según el hash de la clave, por eso hay `part-00000..00002` de tamaños parecidos. El modelo usa 1 reducer para quedar en un solo archivo, y la clasificación usa 1 para calcular la exactitud global.
-
-**¿Cómo llega el modelo a cada nodo en el job 4?**
-Por el *distributed cache*: `-files hdfs://.../part-00000#modelo.tsv`. Antes de arrancar cada tarea, el NodeManager descarga el archivo de HDFS a su disco y lo deja en el directorio de la tarea como `modelo.tsv`.
-
-**¿Por qué `crc32` y no `hash()` para separar train y test?**
-`hash()` de Python cambia en cada proceso, y cada mapper es un proceso distinto en un nodo distinto: cada uno separaría distinto y el modelo se evaluaría con reseñas que ya vio. `crc32` da siempre el mismo resultado.
-
-**¿Por qué no usaron NLTK?**
-Su analizador de sentimiento (VADER) solo funciona en inglés y las reseñas están en español. Lo único útil eran las stopwords, que están escritas en `texto.py`. Además, con Streaming cualquier librería debe instalarse en **todos** los NodeManagers.
+Para mostrar el particionado: cada palabra cae en un solo reducer según el hash de la clave, por eso hay `part-00000..00002` de tamaños parecidos. El Top N usa 1 reducer porque, para armar un ranking global, necesita ver todas las películas.
 
 **`Killed map tasks = 1`, ¿falló algo?**
 No. Es ejecución especulativa: Hadoop lanzó una copia de una tarea lenta en otro nodo; la primera en terminar gana y la otra se mata.
@@ -836,8 +811,7 @@ Vale la pena contarlos: muestran cómo se depura un clúster.
 - [ ] `python jobs/probar_local.py` (validación)
 - [ ] Job 1 wordcount → top 15 coincide
 - [ ] Job 2 promedio → Comedia 5.21
-- [ ] Job 3 entrenar → `__DOCS__ 3134 1918`
-- [ ] Job 4 clasificar → 85.7 %
+- [ ] Job 3 top → REC y El laberinto del fauno con 495
 
 **Punto 3 — Verificación**
 - [ ] Estados RUNNING → SUCCEEDED en :8088

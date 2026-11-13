@@ -5,7 +5,6 @@ así que los scripts pueden hacer `import texto` aunque corran en cualquier Node
 """
 import re
 import sys
-import zlib
 
 # Hadoop Streaming entrega bytes; forzamos UTF-8 sin importar el locale del contenedor.
 # newline="\n" evita que en Windows (pruebas locales) se escriba \r\n.
@@ -42,24 +41,3 @@ def tokenizar(texto):
     """Minúsculas, solo letras, sin stopwords ni palabras de menos de 3 letras."""
     return [p for p in _PALABRA.findall(texto.lower()) if len(p) > 2 and p not in STOPWORDS]
 
-
-def etiqueta(nota):
-    """Nota 7-10 → pos, 1-4 → neg, 5-6 (o vacía) → None (neutra, se descarta)."""
-    if not nota.isdigit():
-        return None
-    n = int(nota)
-    if n >= 7:
-        return "pos"
-    if n <= 4:
-        return "neg"
-    return None
-
-
-def es_test(fila):
-    """Separa ~20% de las reseñas para evaluar el clasificador.
-
-    Usamos crc32 y NO hash() de Python: hash() cambia en cada proceso, y cada mapper es un
-    proceso distinto en un nodo distinto. Con crc32 todas las tareas coinciden en qué es test.
-    """
-    clave = (fila["film_name"] + fila["review_title"] + fila["review_text"]).encode("utf-8")
-    return zlib.crc32(clave) % 10 < 2

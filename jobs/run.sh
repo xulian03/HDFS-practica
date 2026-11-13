@@ -4,13 +4,12 @@
 #   docker compose exec client bash /workspace/jobs/run.sh setup        # sube el dataset a HDFS
 #   docker compose exec client bash /workspace/jobs/run.sh wordcount
 #   docker compose exec client bash /workspace/jobs/run.sh promedio
-#   docker compose exec client bash /workspace/jobs/run.sh entrenar
-#   docker compose exec client bash /workspace/jobs/run.sh clasificar   # requiere "entrenar"
+#   docker compose exec client bash /workspace/jobs/run.sh top
 #   docker compose exec client bash /workspace/jobs/run.sh todos
 #
 # Estructura en HDFS:
 #   /reviews/input/reviews_filmaffinity.csv
-#   /reviews/output/01-wordcount  02-promedio-genero  03-modelo  04-clasificacion
+#   /reviews/output/01-wordcount  02-promedio-genero  03-top-peliculas
 set -euo pipefail
 
 STREAMING=$(ls /opt/hadoop/share/hadoop/tools/lib/hadoop-streaming-*.jar)
@@ -58,23 +57,11 @@ case "${1:-}" in
       -mapper "python3 prom_map.py" -reducer "python3 prom_reduce.py"
     hdfs dfs -cat "$OUT/02-promedio-genero/part-*"
     ;;
-  entrenar)
-    # 1 reducer → un solo archivo de modelo que luego se reparte a todos los mappers.
-    run 03-modelo \
-      -files "$J/texto.py,$J/nb_train_map.py,$J/nb_train_reduce.py" \
-      -numReduceTasks 1 \
-      -mapper "python3 nb_train_map.py" -reducer "python3 nb_train_reduce.py"
-    # Mismo caso: head corta la tubería; se ignora el error de cat.
-    hdfs dfs -cat "$OUT/03-modelo/part-00000" 2>/dev/null | head -5 || true
-    ;;
-  clasificar)
-    # "hdfs://...#modelo.tsv": Hadoop descarga el modelo desde HDFS a cada nodo (distributed cache)
-    # y lo deja en el directorio de la tarea con el nombre modelo.tsv.
-    run 04-clasificacion \
-      -files "$J/texto.py,$J/nb_classify_map.py,$J/nb_classify_reduce.py,hdfs://namenode:9000$OUT/03-modelo/part-00000#modelo.tsv" \
-      -numReduceTasks 1 \
-      -mapper "python3 nb_classify_map.py" -reducer "python3 nb_classify_reduce.py"
-    hdfs dfs -cat "$OUT/04-clasificacion/part-00000"
+  top)
+    # Top 10 películas con más reseñas. 1 reducer: necesita ver todas las películas para armar el ranking.
+    # El combiner es el reducer de WordCount: suma parcial por mapper antes del shuffle.
+    run 03-top-peliculas       -files "$J/texto.py,$J/top_map.py,$J/top_reduce.py,$J/wc_reduce.py"       -numReduceTasks 1       -mapper "python3 top_map.py" -combiner "python3 wc_reduce.py" -reducer "python3 top_reduce.py"
+    hdfs dfs -cat "$OUT/03-top-peliculas/part-00000"
     ;;
   fallar)
     # Job roto a propósito: el mapper no existe. YARN reintenta cada map task (4 intentos)
@@ -84,9 +71,9 @@ case "${1:-}" in
       -mapper "python3 no_existe.py" -reducer "cat" || echo ">>> El job falló, como se esperaba"
     ;;
   todos)
-    for j in setup wordcount promedio entrenar clasificar; do "$0" "$j"; done
+    for j in setup wordcount promedio top; do "$0" "$j"; done
     ;;
   *)
-    sed -n '2,13p' "$0"; exit 1
+    sed -n '2,11p' "$0"; exit 1
     ;;
 esac

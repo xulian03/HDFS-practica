@@ -4,8 +4,8 @@
 
 Sirve para depurar los scripts antes de mandarlos a YARN. Uso:
 
-    python jobs/probar_local.py            # corre los 4 jobs
-    python jobs/probar_local.py wordcount  # solo uno
+    python jobs/probar_local.py            # corre los 3 jobs
+    python jobs/probar_local.py wordcount  # solo uno (wordcount, promedio o top)
 """
 import pathlib
 import shutil
@@ -49,12 +49,10 @@ def main():
             print("\n== Job 2 · Promedio de nota por género ==")
             print(correr("prom_map.py", "prom_reduce.py", tmp, entrada))
 
-        if pedido in ("todos", "clasificacion"):
-            modelo = correr("nb_train_map.py", "nb_train_reduce.py", tmp, entrada)
-            pathlib.Path(tmp, "modelo.tsv").write_text(modelo, encoding="utf-8")
-            print(f"== Job 3 · Modelo entrenado: {len(modelo.splitlines()) - 1} palabras ==")
-            print("\n== Job 4 · Clasificación de reseñas de test ==")
-            print(correr("nb_classify_map.py", "nb_classify_reduce.py", tmp, entrada))
+        if pedido in ("todos", "top"):
+            # En el clúster el combiner es wc_reduce.py; aquí se omite: el resultado es el mismo.
+            print("\n== Job 3 · Top 10 películas con más reseñas ==")
+            print(correr("top_map.py", "top_reduce.py", tmp, entrada))
 
 
 if __name__ == "__main__":
