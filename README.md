@@ -8,7 +8,7 @@ Spoiler: casi todo sobrevive. Lo que no, también tiene su explicación.
 
 ---
 
-## Antes de empezar: Debemos ocmprender los roles de las herramientas
+## Antes de empezar: Debemos comprender los roles de las herramientas
 
 - **Hadoop** es un conjunto de herramientas para guardar y procesar cantidades enormes de datos usando **varios computadores trabajando juntos** (un *clúster*), en lugar de uno solo muy potente.
 - **HDFS** es la parte que guarda los archivos. Parte cada archivo en pedazos llamados **bloques** y guarda **varias copias** de cada uno en máquinas distintas. Así, si una máquina se daña, los datos no se pierden.
