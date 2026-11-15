@@ -1,4 +1,4 @@
-# Hadoop en Docker: armamos un clúster y le rompimos cosas a propósito
+# Hadoop en Docker
 
 En este proyecto armamos un **mini clúster de Hadoop** en nuestro computador usando Docker, le pusimos a procesar un montón de reseñas de películas y después lo **sabotamos a propósito** (apagando nodos, matando contenedores) para ver si aguantaba.
 
