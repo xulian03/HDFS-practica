@@ -3,6 +3,7 @@
 **Estudiante:** EMmanuel Lenis, Julian Vega y Angel Mozo
 
 **Curso / Profesor:** Redes e Infraestructura / Hebert Fabian Martinez Velasquez
+
 **Fecha de ejecución:** 7 de noviembre de 2026
 
 ---
