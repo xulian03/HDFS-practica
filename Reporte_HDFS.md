@@ -1,8 +1,8 @@
 # Taller de tolerancia a fallos en HDFS y YARN
 
-**Estudiante:** _[tu nombre]_  
-**Curso / Profesor:** _[curso]_ · _[profesor]_  
-**Fecha de ejecución:** 14–15 de noviembre de 2026
+**Estudiante:** EMmanuel Lenis, Julian Vega y Angel Mozo
+**Curso / Profesor:** Redes e Infraestructura / Hebert Fabian Martinez Velasquez
+**Fecha de ejecución:** 7 de noviembre de 2026
 
 ---
 
