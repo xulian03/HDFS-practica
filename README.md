@@ -4,7 +4,7 @@ En este proyecto armamos un **mini clúster de Hadoop** en nuestro computador us
 
 Spoiler: casi todo sobrevive. Lo que no, también tiene su explicación.
 
-📄 Las capturas y el paso a paso de cada prueba están en Rporte_HDFS.md.
+📄 Las capturas y el paso a paso de cada prueba están en Reporte_HDFS.md.
 
 ---
 
