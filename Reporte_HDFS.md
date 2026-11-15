@@ -21,7 +21,7 @@ Clúster Hadoop 3.4.1 desplegado con Docker Compose:
 | client | `hdfs-failure-lab-client-1` | Ejecución de comandos y jobs |
 
 - **Dataset:** `/reviews/input/reviews_filmaffinity.csv` (11 545 583 B, 12 bloques de ~1 MB).
-- **Jobs MapReduce:** `01-wordcount` y `02-promedio-genero`.
+- **Jobs MapReduce usados en pruebas:** `01-wordcount` y `02-promedio-genero`.
 - **Factor de replicación por defecto:** 3.
 
 ---
