@@ -1,6 +1,6 @@
 # Taller de tolerancia a fallos en HDFS y YARN
 
-**Estudiante:** EMmanuel Lenis, Julian Vega y Angel Mozo
+**Estudiante:** Emmanuel Lenis, Julian Vega y Angel Mozo
 
 **Curso / Profesor:** Redes e Infraestructura / Hebert Fabian Martinez Velasquez
 
